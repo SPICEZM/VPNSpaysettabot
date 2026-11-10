@@ -7,7 +7,7 @@ import aiohttp
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ParseMode
 from datetime import datetime, timezone, timedelta
 
@@ -15,9 +15,6 @@ from datetime import datetime, timezone, timedelta
 TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 10000))
 ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
-
-# URL твоего приложения на Render (например: https://spaysetta-vpn.onrender.com)
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://tvoj-sait.onrender.com")
 
 PANEL_URL = os.getenv("PANEL_URL", "http://82.27.117.53:16843")      
 PANEL_USER = os.getenv("PANEL_USER", "Spaysetta")          
@@ -75,16 +72,7 @@ async def create_xray_client(telegram_id: int, user_name: str, hours: int = 0):
         print(f"Ошибка API панели: {e}")
     return None
 
-# Кнопка Mini App внизу экрана (строка ввода)
-def get_reply_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="⚡️ Открыть магазин (Mini App)", web_app=WebAppInfo(url=WEBAPP_URL))]
-        ],
-        resize_keyboard=True
-    )
-
-# Инлайн-меню в сообщении
+# Инлайн-меню в сообщении (чистый интерфейс)
 def get_main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⚡️ Купить подписку", callback_data="buy_sub")],
@@ -120,8 +108,6 @@ async def cmd_start(message: Message):
         "Добро пожаловать в <b>SPAYSETTA VPN</b> — твой проводник в свободный и быстрый интернет без границ."
     )
     await message.answer(welcome_text, reply_markup=get_main_menu(), parse_mode=ParseMode.HTML)
-    # Отправляем клавиатуру с магазином внизу экрана
-    await message.answer("👇 Также ты можешь открыть каталог в удобном окне:", reply_markup=get_reply_keyboard())
 
 @dp.callback_query(F.data == "buy_sub")
 async def process_buy(callback: CallbackQuery):
@@ -142,12 +128,11 @@ async def process_tariff_select(callback: CallbackQuery):
         return
         
     title, price = tariffs[tariff_key]
-    user = callback.from_user
     
     text = (
         f"🇷🇺 <b>Оплата подписки: {title}</b>\n\n"
         f"Сумма к оплате: <b>{price} ₽</b>\n\n"
-        "💳 Переведи указанную сумму по реквизитам или воспользуйся Mini App внизу, "
+        "💳 Переведи указанную сумму или воспользуйся кнопкой меню внизу, "
         "после чего нажми кнопку ниже для получения ключа."
     )
     
@@ -178,7 +163,7 @@ async def paid_key_action(callback: CallbackQuery):
         await bot.send_message(ADMIN_ID, f"⚠️ Пользователь @{user.username} нажал оплату ({price}₽), но ключ не сгенерировался!")
     await callback.answer()
 
-# Обработка данных из Mini App (если пользователь купил через веб-приложение)
+# Обработка данных из Mini App
 @dp.message(F.web_app_data)
 async def handle_webapp_data(message: Message):
     try:
@@ -188,7 +173,6 @@ async def handle_webapp_data(message: Message):
         if action == "buy":
             title = data.get("title")
             price = data.get("price")
-            user = message.from_user
             
             text = (
                 f"🇷🇺 <b>Оплата через Mini App: {title}</b>\n\n"
@@ -244,7 +228,7 @@ async def process_back(callback: CallbackQuery):
     await callback.message.edit_text(welcome_text, reply_markup=get_main_menu(), parse_mode=ParseMode.HTML)
     await callback.answer()
 
-# Веб-сервер для бота и раздачи Mini App
+# Веб-сервер для раздачи Mini App
 async def handle_index(request):
     return aiohttp.web.FileResponse('index.html')
 
