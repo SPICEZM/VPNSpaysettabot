@@ -60,6 +60,10 @@
             transform: scale(0.98);
             border-color: var(--accent);
         }
+        .tariff-card.special {
+            border-color: var(--accent);
+            background: linear-gradient(135deg, #1c1c24 0%, #2a1b4e 100%);
+        }
         .tariff-title {
             font-size: 16px;
             font-weight: 600;
@@ -118,7 +122,7 @@
             <div class="tariff-price">120 ₽</div>
         </div>
 
-        <div class="tariff-card" onclick="selectTariff('2months', 200, '2 месяца')</">
+        <div class="tariff-card" onclick="selectTariff('2months', 200, '2 месяца')">
             <div>
                 <p class="tariff-title">💎 2 месяца</p>
                 <p class="tariff-desc">Выгодный выбор</p>
@@ -133,16 +137,23 @@
             </div>
             <div class="tariff-price">400 ₽</div>
         </div>
+
+        <div class="tariff-card special" onclick="selectTariff('lifetime', 2500, 'Навсегда (Lifetime)')">
+            <div>
+                <p class="tariff-title">♾️ Навсегда</p>
+                <p class="tariff-desc">Безлимит навсегда</p>
+            </div>
+            <div class="tariff-price">2500 ₽</div>
+        </div>
     </div>
 
     <button class="btn-main" onclick="openProfile()">👤 Мой профиль</button>
 
     <script>
         let tg = window.Telegram.WebApp;
-        tg.expand(); // Разворачиваем на весь экран
+        tg.expand();
 
         function selectTariff(id, price, name) {
-            // Передаем данные обратно в бота
             tg.sendData(JSON.stringify({action: "buy", tariff: id, price: price, title: name}));
         }
 
