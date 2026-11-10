@@ -6,14 +6,19 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ParseMode
+from datetime import datetime, timezone, timedelta
 
 TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 10000))
+ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789")) 
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Главное меню
+def get_current_time():
+    msk_timezone = timezone(timedelta(hours=3))
+    return datetime.now(msk_timezone).strftime("%d.%m.%Y в %H:%M")
+
 def get_main_menu():
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⚡️ Купить подписку", callback_data="buy_sub")],
@@ -24,23 +29,23 @@ def get_main_menu():
     ])
     return keyboard
 
-# Меню выбора тарифов
+# Новое премиальное меню тарифов со скидками
 def get_tariffs_menu():
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⏳ 1 месяц — 150 ₽", callback_data="sub_1_month")],
-        [InlineKeyboardButton(text="🔥 3 месяца — 400 ₽ (Выгода!)", callback_data="sub_3_months")],
+        [InlineKeyboardButton(text="⏳ 1 неделя — 80 ₽", callback_data="sub_1_week")],
+        [InlineKeyboardButton(text="⚡️ 1 месяц — 120 ₽ (вместо 150 ₽)", callback_data="sub_1_month")],
+        [InlineKeyboardButton(text="💎 2 месяца — 200 ₽", callback_data="sub_2_months")],
+        [InlineKeyboardButton(text="🔥 3 месяца — 400 ₽", callback_data="sub_3_months")],
         [InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="back_to_menu")]
     ])
     return keyboard
 
-# Кнопка возврата
 def get_back_menu():
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="back_to_menu")]
     ])
     return keyboard
 
-# Команда /start
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
     user_name = message.from_user.first_name
@@ -56,7 +61,6 @@ async def cmd_start(message: Message):
     )
     await message.answer(welcome_text, reply_markup=get_main_menu(), parse_mode=ParseMode.HTML)
 
-# Обработка нажатий на кнопки
 @dp.callback_query(F.data == "buy_sub")
 async def process_buy(callback: CallbackQuery):
     tariffs_text = (
@@ -64,7 +68,7 @@ async def process_buy(callback: CallbackQuery):
         "• Полный доступ ко всем серверам (Нидерланды)\n"
         "• Высокая скорость до 1 Гбит/с\n"
         "• Подключение любых устройств\n\n"
-        "<i>Нажми на кнопку ниже для выбора срока:</i>"
+        "<i>Выбирай срок ниже со скидкой: 👇</i>"
     )
     await callback.message.edit_text(tariffs_text, reply_markup=get_tariffs_menu(), parse_mode=ParseMode.HTML)
     await callback.answer()
@@ -101,32 +105,66 @@ async def process_instruction(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "free_test")
 async def process_free_test(callback: CallbackQuery):
+    user = callback.from_user
+    buy_time = get_current_time()
+    
+    try:
+        admin_notification = (
+            f"🎁 <b>Запрос теста (5 часов)</b>\n\n"
+            f"👤 <b>Пользователь:</b> {user.first_name} (@{user.username if user.username else 'нет юзернейма'})\n"
+            f"⏰ <b>Время:</b> {buy_time}"
+        )
+        await bot.send_message(ADMIN_ID, admin_notification, parse_mode=ParseMode.HTML)
+    except Exception as e:
+        print(f"Ошибка: {e}")
+
     test_text = (
         "🎁 <b>Пробный период на 5 часов:</b>\n\n"
         "Оцени скорость и стабильность нашего VPN абсолютно бесплатно!\n\n"
-        "⏳ <i>Тест выдается 1 раз на аккаунт и действует ровно 5 часов. Скоро здесь будет автоматическая генерация ключа.</i>"
+        "⏳ <i>Тест активирован! Скоро здесь будет автоматическая выдача ключа.</i>"
     )
     await callback.message.edit_text(test_text, reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
     await callback.answer()
 
+# Обработчики новых тарифов
+@dp.callback_query(F.data == "sub_1_week")
+async def process_sub_week(callback: CallbackQuery):
+    user = callback.from_user
+    buy_time = get_current_time()
+    try:
+        await bot.send_message(ADMIN_ID, f"💰 <b>ЗАКАЗ: 1 неделя (80 ₽)</b>\n👤 {user.first_name} (@{user.username})\n⏰ {buy_time}", parse_mode=ParseMode.HTML)
+    except: pass
+    await callback.message.edit_text("💳 <b>Тариф: 1 неделя (80 ₽)</b>\nСчет сформирован, ждем оплату...", reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
+    await callback.answer()
+
 @dp.callback_query(F.data == "sub_1_month")
 async def process_sub_1(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "💳 <b>Оплата тарифа на 1 месяц (150 ₽):</b>\n\n"
-        "Интеграция с оплатой настраивается. После оплаты бот автоматически выдаст тебе ключ!",
-        reply_markup=get_back_menu(),
-        parse_mode=ParseMode.HTML
-    )
+    user = callback.from_user
+    buy_time = get_current_time()
+    try:
+        await bot.send_message(ADMIN_ID, f"💰 <b>ЗАКАЗ: 1 месяц (120 ₽)</b>\n👤 {user.first_name} (@{user.username})\n⏰ {buy_time}", parse_mode=ParseMode.HTML)
+    except: pass
+    await callback.message.edit_text("💳 <b>Тариф: 1 месяц — 120 ₽ (скидка!)</b>\nСчет сформирован, ждем оплату...", reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
+    await callback.answer()
+
+@dp.callback_query(F.data == "sub_2_months")
+async def process_sub_2(callback: CallbackQuery):
+    user = callback.from_user
+    buy_time = get_current_time()
+    try:
+        await bot.send_message(ADMIN_ID, f"💰 <b>ЗАКАЗ: 2 месяца (200 ₽)</b>\n👤 {user.first_name} (@{user.username})\n⏰ {buy_time}", parse_mode=ParseMode.HTML)
+    except: pass
+    await callback.message.edit_text("💳 <b>Тариф: 2 месяца (200 ₽)</b>\nСчет сформирован, ждем оплату...", reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
     await callback.answer()
 
 @dp.callback_query(F.data == "sub_3_months")
 async def process_sub_3(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "💳 <b>Оплата тарифа на 3 месяца (400 ₽):</b>\n\n"
-        "Интеграция с оплатой настраивается. После оплаты бот автоматически выдаст ключ!",
-        reply_markup=get_back_menu(),
-        parse_mode=ParseMode.HTML
-    )
+    user = callback.from_user
+    buy_time = get_current_time()
+    try:
+        await bot.send_message(ADMIN_ID, f"🔥 <b>ЗАКАЗ: 3 месяца (400 ₽)</b>\n👤 {user.first_name} (@{user.username})\n⏰ {buy_time}", parse_mode=ParseMode.HTML)
+    except: pass
+    await callback.message.edit_text("💳 <b>Тариф: 3 месяца (400 ₽)</b>\nСчет сформирован, ждем оплату...", reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
     await callback.answer()
 
 @dp.callback_query(F.data == "back_to_menu")
@@ -145,7 +183,6 @@ async def process_back(callback: CallbackQuery):
     await callback.message.edit_text(welcome_text, reply_markup=get_main_menu(), parse_mode=ParseMode.HTML)
     await callback.answer()
 
-# HTTP-заглушка для Render
 async def handle_ping(request):
     return web.Response(text="Bot is running!")
 
@@ -160,7 +197,7 @@ async def web_server():
 async def main():
     logging.basicConfig(level=logging.INFO)
     await web_server()
-    print("Бот с 5-часовым тестом и гайдом запущен...")
+    print("Бот с новыми ценами запущен...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
