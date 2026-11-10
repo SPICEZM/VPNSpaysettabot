@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import os
+import uuid
+import aiohttp
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
@@ -8,9 +10,16 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.enums import ParseMode
 from datetime import datetime, timezone, timedelta
 
-TOKEN = os.getenv("BOT_TOKEN")
+# ================= НАСТРОЙКИ ПАНЕЛИ И БОТА =================
+TOKEN = os.getenv("BOT_TOKEN", "ТВОЙ_ТОКЕН_БОТА_ИЗ_BOTFATHER")
 PORT = int(os.getenv("PORT", 10000))
-ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789")) 
+ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))  # Твой Telegram ID
+
+PANEL_URL = "http://82.27.117.53:16843"      # Адрес и порт панели 3X-UI (без слэша на конце)
+PANEL_USER = "твой_логин_от_панели"          # Логин от панели 3X-UI
+PANEL_PASSWORD = "твой_пароль_от_панели"      # Пароль от панели 3X-UI
+INBOUND_ID = 1                              # ID твоего инбаунда (Spaysetta Main)
+# ==========================================================
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -29,7 +38,6 @@ def get_main_menu():
     ])
     return keyboard
 
-# Новое премиальное меню тарифов со скидками
 def get_tariffs_menu():
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⏳ 1 неделя — 80 ₽", callback_data="sub_1_week")],
@@ -45,6 +53,60 @@ def get_back_menu():
         [InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="back_to_menu")]
     ])
     return keyboard
+
+# Функция создания клиента в панели 3X-UI через API
+async def create_xray_client(telegram_id: int, user_name: str, hours: int = 0):
+    client_uuid = str(uuid.uuid4())
+    email = f"tg_{telegram_id}"
+    
+    expiry_time = 0
+    if hours > 0:
+        expiry_time = int((datetime.now(timezone.utc) + timedelta(hours=hours)).timestamp() * 1000)
+
+    client_data = {
+        "id": INBOUND_ID,
+        "settings": f"""{{
+            "clients": [{{
+                "id": "{client_uuid}",
+                "alterId": 0,
+                "email": "{email}",
+                "limitIp": 2,
+                "totalGB": 0,
+                "expiryTime": {expiry_time},
+                "enable": true,
+                "tgId": "{telegram_id}",
+                "subId": ""
+            }}]
+        }}"""
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            # 1. Авторизация в панели
+            login_url = f"{PANEL_URL}/login"
+            login_payload = {"username": PANEL_USER, "password": PANEL_PASSWORD}
+            
+            async with session.post(login_url, json=login_payload) as resp:
+                if resp.status != 200:
+                    return None
+                
+            # 2. Добавление клиента
+            add_url = f"{PANEL_URL}/panel/api/inbound/addClient"
+            async with session.post(add_url, json=client_data) as resp:
+                res_json = await resp.json()
+                if res_json.get("success"):
+                    # Формируем готовую VLESS-ссылку с Reality
+                    vless_link = (
+                        f"vless://{client_uuid}@82.27.117.53:14613"
+                        f"?encryption=none&security=reality&fp=chrome&sni=yahoo.com"
+                        f"&pbk=pSZY7tLeRZCp8RGQZ8tszKJ_MNRBGdsYH0vzdb_KvgQ"
+                        f"&type=tcp&flow=xtls-rprx-vision#Spaysetta-{user_name}"
+                    )
+                    return vless_link
+    except Exception as e:
+        print(f"Ошибка API панели: {e}")
+        
+    return None
 
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
@@ -106,66 +168,62 @@ async def process_instruction(callback: CallbackQuery):
 @dp.callback_query(F.data == "free_test")
 async def process_free_test(callback: CallbackQuery):
     user = callback.from_user
-    buy_time = get_current_time()
+    await callback.message.edit_text("⏳ <b>Генерируем твой персональный тест на 5 часов...</b>", parse_mode=ParseMode.HTML)
     
+    # Автоматически создаем тестовый ключ через API панели
+    vless_key = await create_xray_client(user.id, user.first_name, hours=5)
+    
+    if vless_key:
+        test_text = (
+            "🎁 <b>Твой пробный период (5 часов) активирован!</b>\n\n"
+            "Скопируй ключ ниже и вставь в приложение (Happ / v2rayNG):\n\n"
+            f"<code>{vless_key}</code>\n\n"
+            "⚠️ <i>Ключ автоматически отключится через 5 часов.</i>"
+        )
+    else:
+        test_text = "❌ Ошибка при создании ключа. Попробуй позже или обратись в поддержку."
+
+    await callback.message.edit_text(test_text, reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
+    await callback.answer()
+
+# Обработчики тарифов (отправляют заявку админу)
+async def handle_tariff_selection(callback: CallbackQuery, tariff_name: str, price: str):
+    user = callback.from_user
+    buy_time = get_current_time()
     try:
         admin_notification = (
-            f"🎁 <b>Запрос теста (5 часов)</b>\n\n"
-            f"👤 <b>Пользователь:</b> {user.first_name} (@{user.username if user.username else 'нет юзернейма'})\n"
+            f"💰 <b>НОВЫЙ ЗАКАЗ: {tariff_name} ({price})</b>\n\n"
+            f"👤 <b>Пользователь:</b> {user.first_name} (@{user.username if user.username else 'нет'})\n"
+            f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
             f"⏰ <b>Время:</b> {buy_time}"
         )
         await bot.send_message(ADMIN_ID, admin_notification, parse_mode=ParseMode.HTML)
     except Exception as e:
-        print(f"Ошибка: {e}")
+        print(f"Не удалось отправить уведомление админу: {e}")
 
-    test_text = (
-        "🎁 <b>Пробный период на 5 часов:</b>\n\n"
-        "Оцени скорость и стабильность нашего VPN абсолютно бесплатно!\n\n"
-        "⏳ <i>Тест активирован! Скоро здесь будет автоматическая выдача ключа.</i>"
+    text = (
+        f"💳 <b>Тариф: {tariff_name} — {price}</b>\n\n"
+        "Счет на оплату сформирован.\n"
+        "После перевода средств администратор выдаст тебе ключ, либо здесь появится автооплата!"
     )
-    await callback.message.edit_text(test_text, reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
+    await callback.message.edit_text(text, reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
     await callback.answer()
 
-# Обработчики новых тарифов
 @dp.callback_query(F.data == "sub_1_week")
 async def process_sub_week(callback: CallbackQuery):
-    user = callback.from_user
-    buy_time = get_current_time()
-    try:
-        await bot.send_message(ADMIN_ID, f"💰 <b>ЗАКАЗ: 1 неделя (80 ₽)</b>\n👤 {user.first_name} (@{user.username})\n⏰ {buy_time}", parse_mode=ParseMode.HTML)
-    except: pass
-    await callback.message.edit_text("💳 <b>Тариф: 1 неделя (80 ₽)</b>\nСчет сформирован, ждем оплату...", reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
-    await callback.answer()
+    await handle_tariff_selection(callback, "1 неделя", "80 ₽")
 
 @dp.callback_query(F.data == "sub_1_month")
 async def process_sub_1(callback: CallbackQuery):
-    user = callback.from_user
-    buy_time = get_current_time()
-    try:
-        await bot.send_message(ADMIN_ID, f"💰 <b>ЗАКАЗ: 1 месяц (120 ₽)</b>\n👤 {user.first_name} (@{user.username})\n⏰ {buy_time}", parse_mode=ParseMode.HTML)
-    except: pass
-    await callback.message.edit_text("💳 <b>Тариф: 1 месяц — 120 ₽ (скидка!)</b>\nСчет сформирован, ждем оплату...", reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
-    await callback.answer()
+    await handle_tariff_selection(callback, "1 месяц", "120 ₽")
 
 @dp.callback_query(F.data == "sub_2_months")
 async def process_sub_2(callback: CallbackQuery):
-    user = callback.from_user
-    buy_time = get_current_time()
-    try:
-        await bot.send_message(ADMIN_ID, f"💰 <b>ЗАКАЗ: 2 месяца (200 ₽)</b>\n👤 {user.first_name} (@{user.username})\n⏰ {buy_time}", parse_mode=ParseMode.HTML)
-    except: pass
-    await callback.message.edit_text("💳 <b>Тариф: 2 месяца (200 ₽)</b>\nСчет сформирован, ждем оплату...", reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
-    await callback.answer()
+    await handle_tariff_selection(callback, "2 месяца", "200 ₽")
 
 @dp.callback_query(F.data == "sub_3_months")
 async def process_sub_3(callback: CallbackQuery):
-    user = callback.from_user
-    buy_time = get_current_time()
-    try:
-        await bot.send_message(ADMIN_ID, f"🔥 <b>ЗАКАЗ: 3 месяца (400 ₽)</b>\n👤 {user.first_name} (@{user.username})\n⏰ {buy_time}", parse_mode=ParseMode.HTML)
-    except: pass
-    await callback.message.edit_text("💳 <b>Тариф: 3 месяца (400 ₽)</b>\nСчет сформирован, ждем оплату...", reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
-    await callback.answer()
+    await handle_tariff_selection(callback, "3 месяца", "400 ₽")
 
 @dp.callback_query(F.data == "back_to_menu")
 async def process_back(callback: CallbackQuery):
@@ -197,7 +255,7 @@ async def web_server():
 async def main():
     logging.basicConfig(level=logging.INFO)
     await web_server()
-    print("Бот с новыми ценами запущен...")
+    print("Бот Spaysetta VPN успешно запущен и подключен к панели!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
