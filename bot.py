@@ -72,7 +72,7 @@ async def create_xray_client(telegram_id: int, user_name: str, hours: int = 0):
         print(f"Ошибка API панели: {e}")
     return None
 
-# Инлайн-меню в сообщении (чистый интерфейс)
+# Чистое инлайн-меню в сообщении
 def get_main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⚡️ Купить подписку", callback_data="buy_sub")],
