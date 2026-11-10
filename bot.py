@@ -72,7 +72,6 @@ async def create_xray_client(telegram_id: int, user_name: str, hours: int = 0):
         print(f"Ошибка API панели: {e}")
     return None
 
-# Чистое инлайн-меню в сообщении
 def get_main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⚡️ Купить подписку", callback_data="buy_sub")],
@@ -88,6 +87,7 @@ def get_tariffs_menu():
         [InlineKeyboardButton(text="⚡️ 1 месяц — 120 ₽", callback_data="sub_month")],
         [InlineKeyboardButton(text="💎 2 месяца — 200 ₽", callback_data="sub_2months")],
         [InlineKeyboardButton(text="🔥 3 месяца — 400 ₽", callback_data="sub_3months")],
+        [InlineKeyboardButton(text="♾️ Навсегда — 2500 ₽", callback_data="sub_lifetime")],
         [InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="back_to_menu")]
     ])
 
@@ -121,7 +121,8 @@ async def process_tariff_select(callback: CallbackQuery):
         "sub_week": ("1 неделя", 80),
         "sub_month": ("1 месяц", 120),
         "sub_2months": ("2 месяца", 200),
-        "sub_3months": ("3 месяца", 400)
+        "sub_3months": ("3 месяца", 400),
+        "sub_lifetime": ("Навсегда (Lifetime)", 2500)
     }
     tariff_key = callback.data
     if tariff_key not in tariffs:
@@ -163,7 +164,6 @@ async def paid_key_action(callback: CallbackQuery):
         await bot.send_message(ADMIN_ID, f"⚠️ Пользователь @{user.username} нажал оплату ({price}₽), но ключ не сгенерировался!")
     await callback.answer()
 
-# Обработка данных из Mini App
 @dp.message(F.web_app_data)
 async def handle_webapp_data(message: Message):
     try:
@@ -228,7 +228,6 @@ async def process_back(callback: CallbackQuery):
     await callback.message.edit_text(welcome_text, reply_markup=get_main_menu(), parse_mode=ParseMode.HTML)
     await callback.answer()
 
-# Веб-сервер для раздачи Mini App
 async def handle_index(request):
     return aiohttp.web.FileResponse('index.html')
 
