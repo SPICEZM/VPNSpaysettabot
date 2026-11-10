@@ -7,10 +7,9 @@ import aiohttp
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
 from aiogram.enums import ParseMode
 from datetime import datetime, timezone, timedelta
-from aiocryptopay import AioCryptoPay, Networks
 
 # ================= НАСТРОЙКИ =================
 TOKEN = os.getenv("BOT_TOKEN")
@@ -76,17 +75,37 @@ async def create_xray_client(telegram_id: int, user_name: str, hours: int = 0):
         print(f"Ошибка API панели: {e}")
     return None
 
+# Кнопка Mini App внизу экрана (строка ввода)
+def get_reply_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="⚡️ Открыть магазин (Mini App)", web_app=WebAppInfo(url=WEBAPP_URL))]
+        ],
+        resize_keyboard=True
+    )
+
+# Инлайн-меню в сообщении
 def get_main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⚡️ Открыть магазин (Mini App)", web_app=WebAppInfo(url=WEBAPP_URL))],
-        [InlineKeyboardButton(text="🎁 Тест на 5 часов", callback_data="free_test")],
+        [InlineKeyboardButton(text="⚡️ Купить подписку", callback_data="buy_sub")],
+        [InlineKeyboardButton(text="👤 Мой профиль", callback_data="profile"),
+         InlineKeyboardButton(text="🎁 Тест на 5 часов", callback_data="free_test")],
         [InlineKeyboardButton(text="📖 Инструкция", callback_data="instruction"),
          InlineKeyboardButton(text="💬 Поддержка", url="https://t.me/твой_логин")]
     ])
 
+def get_tariffs_menu():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⏳ 1 неделя — 80 ₽", callback_data="sub_week")],
+        [InlineKeyboardButton(text="⚡️ 1 месяц — 120 ₽", callback_data="sub_month")],
+        [InlineKeyboardButton(text="💎 2 месяца — 200 ₽", callback_data="sub_2months")],
+        [InlineKeyboardButton(text="🔥 3 месяца — 400 ₽", callback_data="sub_3months")],
+        [InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="back_to_menu")]
+    ])
+
 def get_back_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⬅️ Главное меню", callback_data="back_to_menu")]
+        [InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="back_to_menu")]
     ])
 
 @dp.message(Command("start"))
@@ -98,11 +117,68 @@ async def cmd_start(message: Message):
         
     welcome_text = (
         f"<b>Привет, {message.from_user.first_name}! 👋</b>\n\n"
-        "Добро пожаловать в <b>SPAYSETTA VPN</b> — нажми кнопку ниже, чтобы открыть каталог подписок в удобном окне!"
+        "Добро пожаловать в <b>SPAYSETTA VPN</b> — твой проводник в свободный и быстрый интернет без границ."
     )
     await message.answer(welcome_text, reply_markup=get_main_menu(), parse_mode=ParseMode.HTML)
+    # Отправляем клавиатуру с магазином внизу экрана
+    await message.answer("👇 Также ты можешь открыть каталог в удобном окне:", reply_markup=get_reply_keyboard())
 
-# Обработка данных, прилетевших из Mini App
+@dp.callback_query(F.data == "buy_sub")
+async def process_buy(callback: CallbackQuery):
+    text = "💎 <b>Выбери подходящий тариф подписки:</b>"
+    await callback.message.edit_text(text, reply_markup=get_tariffs_menu(), parse_mode=ParseMode.HTML)
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("sub_"))
+async def process_tariff_select(callback: CallbackQuery):
+    tariffs = {
+        "sub_week": ("1 неделя", 80),
+        "sub_month": ("1 месяц", 120),
+        "sub_2months": ("2 месяца", 200),
+        "sub_3months": ("3 месяца", 400)
+    }
+    tariff_key = callback.data
+    if tariff_key not in tariffs:
+        return
+        
+    title, price = tariffs[tariff_key]
+    user = callback.from_user
+    
+    text = (
+        f"🇷🇺 <b>Оплата подписки: {title}</b>\n\n"
+        f"Сумма к оплате: <b>{price} ₽</b>\n\n"
+        "💳 Переведи указанную сумму по реквизитам или воспользуйся Mini App внизу, "
+        "после чего нажми кнопку ниже для получения ключа."
+    )
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Я оплатил (получить ключ)", callback_data=f"paid_key_{price}")],
+        [InlineKeyboardButton(text="⬅️ Назад к тарифам", callback_data="buy_sub")]
+    ])
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("paid_key_"))
+async def paid_key_action(callback: CallbackQuery):
+    price = callback.data.split("_")[2]
+    user = callback.from_user
+    
+    await callback.message.edit_text("⏳ <b>Проверяем и генерируем ключ...</b>", parse_mode=ParseMode.HTML)
+    vless_key = await create_xray_client(user.id, user.first_name, hours=0)
+    
+    if vless_key:
+        success_text = f"🎉 <b>Спасибо за покупку! Твоя подписка активирована:</b>\n\n<code>{vless_key}</code>"
+        await callback.message.edit_text(success_text, reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
+        try:
+            await bot.send_message(ADMIN_ID, f"🔔 Успешная покупка!\n👤 @{user.username} (ID: {user.id})\n💰 Сумма: {price}₽")
+        except:
+            pass
+    else:
+        await callback.message.edit_text("❌ Ошибка создания ключа. Администратор уже уведомлен.", reply_markup=get_back_menu())
+        await bot.send_message(ADMIN_ID, f"⚠️ Пользователь @{user.username} нажал оплату ({price}₽), но ключ не сгенерировался!")
+    await callback.answer()
+
+# Обработка данных из Mini App (если пользователь купил через веб-приложение)
 @dp.message(F.web_app_data)
 async def handle_webapp_data(message: Message):
     try:
@@ -115,15 +191,13 @@ async def handle_webapp_data(message: Message):
             user = message.from_user
             
             text = (
-                f"🇷🇺 <b>Оплата подписки: {title}</b>\n\n"
+                f"🇷🇺 <b>Оплата через Mini App: {title}</b>\n\n"
                 f"Сумма к оплате: <b>{price} ₽</b>\n\n"
-                "💳 Чтобы оплатить без засвета номера, переведите сумму по реквизитам или воспользуйтесь поддержкой, "
-                "после чего нажмите кнопку ниже для мгновенного получения ключа."
+                "После перевода нажмите кнопку ниже для мгновенного получения ключа."
             )
-            
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="✅ Я оплатил (получить ключ)", callback_data=f"app_paid_{price}")],
-                [InlineKeyboardButton(text="⬅️ В меню", callback_data="back_to_menu")]
+                [InlineKeyboardButton(text="✅ Я оплатил (получить ключ)", callback_data=f"paid_key_{price}")],
+                [InlineKeyboardButton(text="⬅️ Главное меню", callback_data="back_to_menu")]
             ])
             await message.answer(text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
             
@@ -133,23 +207,21 @@ async def handle_webapp_data(message: Message):
     except Exception as e:
         print(f"Ошибка обработки WebApp data: {e}")
 
-@dp.callback_query(F.data.startswith("app_paid_"))
-async def app_paid_action(callback: CallbackQuery):
-    amount = callback.data.split("_")[2]
+@dp.callback_query(F.data == "profile")
+async def process_profile(callback: CallbackQuery):
     user = callback.from_user
-    
-    await callback.message.edit_text("⏳ <b>Генерируем твой ключ подписки...</b>", parse_mode=ParseMode.HTML)
-    vless_key = await create_xray_client(user.id, user.first_name, hours=0)
-    
-    if vless_key:
-        success_text = f"🎉 <b>Оплата подтверждена! Твой ключ:</b>\n\n<code>{vless_key}</code>"
-        await callback.message.edit_text(success_text, reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
-        try:
-            await bot.send_message(ADMIN_ID, f"🔔 Успешная покупка через Mini App!\n👤 @{user.username} (ID: {user.id})\n💰 Сумма: {amount}₽")
-        except:
-            pass
-    else:
-        await callback.message.edit_text("❌ Ошибка генерации ключа. Обратитесь в поддержку.", reply_markup=get_back_menu())
+    await callback.message.edit_text(f"👤 <b>Твой профиль:</b>\n\n🆔 ID: <code>{user.id}</code>\n🔴 Подписка: Активной подписки нет", reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
+    await callback.answer()
+
+@dp.callback_query(F.data == "instruction")
+async def process_instruction(callback: CallbackQuery):
+    text = (
+        "📖 <b>Инструкция по подключению:</b>\n\n"
+        "1. Скачай приложение <b>Happ</b> (iOS) или <b>v2rayNG</b> (Android).\n"
+        "2. Скопируй свой VLESS-ключ после покупки или теста.\n"
+        "3. Добавь его в приложение и запусти подключение!"
+    )
+    await callback.message.edit_text(text, reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
     await callback.answer()
 
 @dp.callback_query(F.data == "free_test")
@@ -158,23 +230,21 @@ async def process_free_test(callback: CallbackQuery):
     vless_key = await create_xray_client(callback.from_user.id, callback.from_user.first_name, hours=5)
     
     if vless_key:
-        text = f"🎁 <b>Тест успешно активирован!</b>\n\nСкопируй ключ ниже:\n\n<code>{vless_key}</code>"
+        text = f"🎁 <b>Тест успешно активирован!</b>\n\nСкопируй ключ ниже:\n\n<code>{vless_key}</code>\n\n⚠️ <i>Срок действия: 5 часов.</i>"
     else:
-        text = "❌ Ошибка создания ключа."
-    await callback.message.edit_text(text, reply_markup=get_back_menu(), parse_Mode=ParseMode.HTML)
-
-@dp.callback_query(F.data == "instruction")
-async def process_instruction(callback: CallbackQuery):
-    text = "📖 <b>Инструкция:</b> Скачай Happ (iOS) или v2rayNG (Android), вставь ключ и подключись!"
+        text = "❌ Ошибка создания ключа. Попробуй позже."
     await callback.message.edit_text(text, reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
 
 @dp.callback_query(F.data == "back_to_menu")
 async def process_back(callback: CallbackQuery):
-    welcome_text = "<b>Привет! 👋</b>\nДобро пожаловать в <b>SPAYSETTA VPN</b>."
+    welcome_text = (
+        f"<b>Привет, {callback.from_user.first_name}! 👋</b>\n\n"
+        "Добро пожаловать в <b>SPAYSETTA VPN</b> — твой проводник в свободный и быстрый интернет без границ."
+    )
     await callback.message.edit_text(welcome_text, reply_markup=get_main_menu(), parse_mode=ParseMode.HTML)
     await callback.answer()
 
-# Веб-сервер для бота и выдачи index.html
+# Веб-сервер для бота и раздачи Mini App
 async def handle_index(request):
     return aiohttp.web.FileResponse('index.html')
 
@@ -189,7 +259,7 @@ async def web_server():
 async def main():
     logging.basicConfig(level=logging.INFO)
     await web_server()
-    print("Mini App сервер и бот запущены!")
+    print("Бот и Mini App сервер успешно запущены!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
