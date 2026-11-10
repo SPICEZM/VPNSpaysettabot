@@ -55,7 +55,7 @@ def get_back_menu():
         [InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="back_to_menu")]
     ])
 
-# Функция создания клиента в 3X-UI через API
+# Функция создания клиента в 3X-UI через API[cite: 1]
 async def create_xray_client(telegram_id: int, user_name: str, hours: int = 0):
     client_uuid = str(uuid.uuid4())
     email = f"tg_{telegram_id}_{int(datetime.now().timestamp())}"
@@ -149,7 +149,7 @@ async def process_free_test(callback: CallbackQuery):
         text = "❌ Ошибка создания ключа. Попробуй позже."
     await callback.message.edit_text(text, reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
 
-# Создание счета через Crypto Pay
+# Создание счета через Crypto Pay[cite: 1]
 async def create_invoice_for_user(callback: CallbackQuery, amount_usd: float, title: str):
     try:
         invoice = await crypto.create_invoice(amount=amount_usd, fiat='USD', currency_type='fiat', description=f"Spaysetta VPN: {title}")
@@ -183,7 +183,7 @@ async def sub_2months(callback: CallbackQuery): await create_invoice_for_user(ca
 @dp.callback_query(F.data == "sub_3months")
 async def sub_3months(callback: CallbackQuery): await create_invoice_for_user(callback, 4.50, "3 месяца")
 
-# Проверка оплаты
+# Проверка оплаты[cite: 1]
 @dp.callback_query(F.data.startswith("check_"))
 async def check_payment(callback: CallbackQuery):
     invoice_id = int(callback.data.split("_")[1])
