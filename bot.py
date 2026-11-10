@@ -1,18 +1,17 @@
 import asyncio
 import logging
-from aiogram import Bot, Dispatcher, F
+import os
+from aiohttp import web
+from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-import os
 
-# Получаем токен из переменных окружения Render
 TOKEN = os.getenv("BOT_TOKEN")
+PORT = int(os.getenv("PORT", 10000))
 
-# Инициализация бота и диспетчера
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Главное меню с кнопками
 def get_main_menu():
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💎 Купить подписку (VPN / Proxy)", callback_data="buy_sub")],
@@ -22,7 +21,6 @@ def get_main_menu():
     ])
     return keyboard
 
-# Команда /start
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
     user_name = message.from_user.first_name
@@ -33,10 +31,23 @@ async def cmd_start(message: Message):
     )
     await message.answer(welcome_text, reply_markup=get_main_menu())
 
-# Запуск бота
+# Заглушка для HTTP-сервера, чтобы Render не ругался на закрытый порт
+async def handle_ping(request):
+    return web.Response(text="Bot is running!")
+
+async def web_server():
+    app = web.Application()
+    app.router.add_get("/", handle_ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+
 async def main():
     logging.basicConfig(level=logging.INFO)
-    print("Бот успешно запущен и готов к работе...")
+    # Запускаем и HTTP-сервер для порта, и поллинг телеграм-бота одновременно
+    await web_server()
+    print("Бот и веб-сервер успешно запущены...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
