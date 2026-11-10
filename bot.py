@@ -3,9 +3,10 @@ import logging
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+import os
 
-# Токен твоего бота (потом заменим на реальный от BotFather)
-TOKEN = "YOUR_BOT_TOKEN_HERE"
+# Получаем токен из переменных окружения Render
+TOKEN = os.getenv("BOT_TOKEN")
 
 # Инициализация бота и диспетчера
 bot = Bot(token=TOKEN)
@@ -26,7 +27,7 @@ def get_main_menu():
 async def cmd_start(message: Message):
     user_name = message.from_user.first_name
     welcome_text = (
-        جЗдравствуй, {user_name}! 🚀\n\n"
+        f"Здравствуй, {user_name}! 🚀\n\n"
         "Добро пожаловать в наш сервис быстрого и безопасного интернета.\n"
         "Выбери нужный пункт в меню ниже:"
     )
@@ -35,7 +36,7 @@ async def cmd_start(message: Message):
 # Запуск бота
 async def main():
     logging.basicConfig(level=logging.INFO)
-    print("Бот запущен и готов к работе...")
+    print("Бот успешно запущен и готов к работе...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
