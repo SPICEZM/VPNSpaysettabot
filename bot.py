@@ -14,11 +14,10 @@ from aiocryptopay import AioCryptoPay, Networks
 # ================= НАСТРОЙКИ =================
 TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 10000))
-ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))  # Укажи свой Telegram ID
+ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
 
-# Реквизиты для оплаты через СБП / перевод
-SBP_PHONE = os.getenv("SBP_PHONE", "+79000000000")  # Твой номер телефона
-SBP_BANK = os.getenv("SBP_BANK", "Озон Банк / Сбер")   # Название банка
+# Твой кошелек ЮMoney (куда будут приходить рубли)
+YOOMONEY_WALLET = os.getenv("YOOMONEY_WALLET", "41001XXXXXXXXXX") 
 
 PANEL_URL = os.getenv("PANEL_URL", "http://82.27.117.53:16843")      
 PANEL_USER = os.getenv("PANEL_USER", "Spaysetta")          
@@ -43,17 +42,17 @@ def get_main_menu():
 
 def get_tariffs_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💳 Рубли (СБП / Карта)", callback_data="pay_rub_menu")],
+        [InlineKeyboardButton(text="🇷🇺 Рубли (ЮMoney / Карты)", callback_data="pay_rub_menu")],
         [InlineKeyboardButton(text="💎 Криптовалюта (USDT/TON)", callback_data="pay_crypto_menu")],
         [InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="back_to_menu")]
     ])
 
 def get_rub_tariffs_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⏳ 1 неделя — 80 ₽", callback_data="sbp_week")],
-        [InlineKeyboardButton(text="⚡️ 1 месяц — 120 ₽", callback_data="sbp_month")],
-        [InlineKeyboardButton(text="💎 2 месяца — 200 ₽", callback_data="sbp_2months")],
-        [InlineKeyboardButton(text="🔥 3 месяца — 400 ₽", callback_data="sbp_3months")],
+        [InlineKeyboardButton(text="⏳ 1 неделя — 80 ₽", callback_data="ym_week")],
+        [InlineKeyboardButton(text="⚡️ 1 месяц — 120 ₽", callback_data="ym_month")],
+        [InlineKeyboardButton(text="💎 2 месяца — 200 ₽", callback_data="ym_2months")],
+        [InlineKeyboardButton(text="🔥 3 месяца — 400 ₽", callback_data="ym_3months")],
         [InlineKeyboardButton(text="⬅️ Назад к выбору оплаты", callback_data="buy_sub")]
     ])
 
@@ -139,7 +138,7 @@ async def process_buy(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "pay_rub_menu")
 async def pay_rub_menu(callback: CallbackQuery):
-    text = "🇷🇺 <b>Выберите тариф для оплаты в рублях (СБП):</b>"
+    text = "🇷🇺 <b>Выберите тариф для оплаты в рублях (ЮMoney / Карты):</b>"
     await callback.message.edit_text(text, reply_markup=get_rub_tariffs_menu(), parse_mode=ParseMode.HTML)
     await callback.answer()
 
@@ -149,105 +148,81 @@ async def pay_crypto_menu(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=get_crypto_tariffs_menu(), parse_mode=ParseMode.HTML)
     await callback.answer()
 
-# Обработка выбора рублевого тарифа через СБП
-async def process_sbp_order(callback: CallbackQuery, amount: int, title: str):
+# Генерация счета через ЮMoney
+async def process_yoomoney_order(callback: CallbackQuery, amount: int, title: str):
     user = callback.from_user
-    text = (
-        f"🇷🇺 <b>Оплата по СБП: {title}</b>\n\n"
-        f"Сумма к оплате: <b>{amount} ₽</b>\n\n"
-        f"📲 <b>Реквизиты для перевода:</b>\n"
-        f"Банк: <code>{SBP_BANK}</code>\n"
-        f"Номер телефона: <code>{SBP_PHONE}</code>\n\n"
-        f"⚠️ <i>Обязательно переведите точную сумму. После перевода нажмите кнопку ниже, чтобы уведомить администратора.</i>"
+    comment = f"Spaysetta VPN {title} ID {user.id}"
+    
+    pay_url = (
+        f"https://yoomoney.ru/quickpay/confirm.xml?"
+        f"receiver={YOOMONEY_WALLET}&"
+        f"quickpay-form=button&"
+        f"sum={amount}&"
+        f"label={user.id}&"
+        f"targets=Spaysetta+VPN+{title}&"
+        f"comment={comment}&"
+        f"paymentType=PC"
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Я оплатил", callback_data=f"sbp_paid_{user.id}_{amount}")],
+        [InlineKeyboardButton(text="💳 Оплатить через ЮMoney", url=pay_url)],
+        [InlineKeyboardButton(text="✅ Я оплатил (получить ключ)", callback_data=f"ym_paid_{user.id}_{amount}")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="pay_rub_menu")]
     ])
+    
+    text = (
+        f"🇷🇺 <b>Оплата через ЮMoney: {title}</b>\n\n"
+        f"Сумма к оплате: <b>{amount} ₽</b>\n\n"
+        "1. Нажми кнопку <b>«Оплатить через ЮMoney»</b> и соверши перевод.\n"
+        "2. После успешной оплаты вернись сюда и нажми <b>«✅ Я оплатил»</b> для мгновенного получения ключа."
+    )
+    
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
     await callback.answer()
 
-@dp.callback_query(F.data == "sbp_week")
-async def sbp_week(callback: CallbackQuery): await process_sbp_order(callback, 80, "1 неделя")
+@dp.callback_query(F.data == "ym_week")
+async def ym_week(callback: CallbackQuery): await process_yoomoney_order(callback, 80, "1 неделя")
 
-@dp.callback_query(F.data == "sbp_month")
-async def sbp_month(callback: CallbackQuery): await process_sbp_order(callback, 120, "1 месяц")
+@dp.callback_query(F.data == "ym_month")
+async def ym_month(callback: CallbackQuery): await process_yoomoney_order(callback, 120, "1 месяц")
 
-@dp.callback_query(F.data == "sbp_2months")
-async def sbp_2months(callback: CallbackQuery): await process_sbp_order(callback, 200, "2 месяца")
+@dp.callback_query(F.data == "ym_2months")
+async def ym_2months(callback: CallbackQuery): await process_yoomoney_order(callback, 200, "2 месяца")
 
-@dp.callback_query(F.data == "sbp_3months")
-async def sbp_3months(callback: CallbackQuery): await process_sbp_order(callback, 400, "3 месяца")
+@dp.callback_query(F.data == "ym_3months")
+async def ym_3months(callback: CallbackQuery): await process_yoomoney_order(callback, 400, "3 месяца")
 
-# Пользователь нажал "Я оплатил" через СБП
-@dp.callback_query(F.data.startswith("sbp_paid_"))
-async def sbp_paid_notify(callback: CallbackQuery):
+# Пользователь нажал "Я оплатил" после перевода в ЮMoney
+@dp.callback_query(F.data.startswith("ym_paid_"))
+async def ym_paid_action(callback: CallbackQuery):
     parts = callback.data.split("_")
     user_id = int(parts[2])
     amount = parts[3]
     user = callback.from_user
     
-    # Сообщение пользователю
-    await callback.message.edit_text(
-        "⏳ <b>Заявка принята!</b>\х"
-        "Мы проверяем поступление средств. Как только платеж подтвердится, бот пришлет ваш ключ.",
-        reply_markup=get_back_menu(), parse_mode=ParseMode.HTML
-    )
-    
-    # Уведомление админу с кнопкой быстрого подтверждения
-    admin_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Подтвердить и выдать ключ", callback_data=f"adm_approve_{user_id}")],
-        [InlineKeyboardButton(text="❌ Отклонить", callback_data=f"adm_reject_{user_id}")]
-    ])
-    
-    await bot.send_message(
-        ADMIN_ID,
-        f"🔔 <b>Новый запрос на оплату (СБП)!</b>\n\n"
-        f"👤 Пользователь: @{user.username or 'нет'} (ID: <code>{user.id}</code>)\n"
-        f"💰 Сумма: <b>{amount} ₽</b>",
-        reply_markup=admin_keyboard,
-        parse_mode=ParseMode.HTML
-    )
-    await callback.answer("Заявка отправлена администратору!")
-
-# Админ подтверждает платеж
-@dp.callback_query(F.data.startswith("adm_approve_"))
-async def adm_approve(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("Недостаточно прав!", show_alert=True)
-        return
-        
-    target_user_id = int(callback.data.split("_")[2])
-    
-    # Генерируем ключ
-    vless_key = await create_xray_client(target_user_id, "User", hours=0)
+    # Автовыдача ключа сразу пользователю
+    await callback.message.edit_text("⏳ <b>Проверяем и генерируем ключ...</b>", parse_mode=ParseMode.HTML)
+    vless_key = await create_xray_client(user.id, user.first_name, hours=0)
     
     if vless_key:
+        success_text = f"🎉 <b>Оплата подтверждена! Твоя подписка активирована:</b>\n\n<code>{vless_key}</code>"
+        await callback.message.edit_text(success_text, reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
+        
+        # Уведомляем админа в фоновом режиме
         try:
             await bot.send_message(
-                target_user_id,
-                f"🎉 <b>Оплата подтверждена администратором! Твоя подписка активирована:</b>\n\n<code>{vless_key}</code>",
-                reply_markup=get_back_menu(),
-                parse_Mode=ParseMode.HTML
+                ADMIN_ID,
+                f"🔔 <b>Успешная покупка (ЮMoney)!</b>\n\n"
+                f"👤 Пользователь: @{user.username or 'нет'} (ID: <code>{user.id}</code>)\n"
+                f"💰 Сумма: <b>{amount} ₽</b>",
+                parse_mode=ParseMode.HTML
             )
-            await callback.message.edit_text("✅ <b>Платеж подтвержден, ключ успешно отправлен пользователю!</b>")
-        except Exception as e:
-            await callback.message.edit_text(f"⚠️ Ключ создан, но не удалось отправить пользователю: {e}")
+        except:
+            pass
     else:
-        await callback.message.edit_text("❌ Ошибка при создании ключа в панели 3X-UI!")
-    await callback.answer()
-
-@dp.callback_query(F.data.startswith("adm_reject_"))
-async def adm_reject(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        return
-    target_user_id = int(callback.data.split("_")[2])
-    try:
-        await bot.send_message(target_user_id, "❌ Ваша оплата не была подтверждена администратором. Если это ошибка, обратитесь в поддержку.", reply_markup=get_back_menu())
-    except:
-        pass
-    await callback.message.edit_text("❌ Заявка отклонена.")
+        await callback.message.edit_text("❌ Ошибка создания ключа в панели. Администратор уже уведомлен.", reply_markup=get_back_menu())
+        await bot.send_message(ADMIN_ID, f"⚠️ Пользователь @{user.username} оплатил {amount}₽ через ЮMoney, но ключ не сгенерировался!")
+    
     await callback.answer()
 
 @dp.callback_query(F.data == "profile")
@@ -341,7 +316,7 @@ async def process_back(callback: CallbackQuery):
         f"<b>Привет, {callback.from_user.first_name}! 👋</b>\n\n"
         "Добро пожаловать в <b>SPAYSETTA VPN</b> — твой проводник в свободный и быстрый интернет без границ."
     )
-    await callback.message.edit_text(welcome_text, reply_markup=get_main_menu(), parse_mode=ParseMode.HTML)
+    await callback.message.edit_text(welcome_text, reply_markup=get_main_menu(), parse_Mode=ParseMode.HTML)
     await callback.answer()
 
 async def handle_ping(request): 
