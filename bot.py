@@ -4,7 +4,7 @@ import os
 from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
 
 TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 10000))
@@ -12,26 +12,39 @@ PORT = int(os.getenv("PORT", 10000))
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
+# Премиальное главное меню
 def get_main_menu():
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💎 Купить подписку (VPN / Proxy)", callback_data="buy_sub")],
-        [InlineKeyboardButton(text="👤 Мой профиль", callback_data="profile")],
-        [InlineKeyboardButton(text="📖 Инструкция", callback_data="instruction")],
-        [InlineKeyboardButton(text="💬 Поддержка", url="https://t.me/твой_логин")]
+        [InlineKeyboardButton(text="⚡️ Купить подписку", callback_data="buy_sub")],
+        [InlineKeyboardButton(text="👤 Мой профиль", callback_data="profile"),
+         InlineKeyboardButton(text="🎁 Пробный период", callback_data="free_test")],
+        [InlineKeyboardButton(text="📖 Инструкция", callback_data="instruction"),
+         InlineKeyboardButton(text="💬 Поддержка", url="https://t.me/твой_логин")]
     ])
     return keyboard
 
+# Команда /start с сочным оформлением
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
     user_name = message.from_user.first_name
+    
     welcome_text = (
-        f"Здравствуй, {user_name}! 🚀\n\n"
-        "Добро пожаловать в наш сервис быстрого и безопасного интернета.\n"
-        "Выбери нужный пункт в меню ниже:"
+        f"<b>Привет, {user_name}! 👋</b>\n\n"
+        "Добро пожаловать в <b>SPAYSETTA VPN</b> — твой проводник в свободный, быстрый и безопасный интернет без границ.\n\n"
+        "🚀 <b>Наши преимущества:</b>\n"
+        "• Высокая скорость и низкий пинг (Нидерланды)\n"
+        "• Обход любых блокировок (YouTube, TikTok, Instagram)\n"
+        "• Протокол нового поколения (VLESS + Reality)\n\n"
+        "<i>Выбери нужный раздел в меню ниже:</i>"
     )
-    await message.answer(welcome_text, reply_markup=get_main_menu())
+    
+    await message.answer(
+        welcome_text, 
+        reply_markup=get_main_menu(), 
+        parse_mode=ParseMode.HTML
+    )
 
-# Заглушка для HTTP-сервера, чтобы Render не ругался на закрытый порт
+# HTTP-заглушка для Render
 async def handle_ping(request):
     return web.Response(text="Bot is running!")
 
@@ -45,9 +58,8 @@ async def web_server():
 
 async def main():
     logging.basicConfig(level=logging.INFO)
-    # Запускаем и HTTP-сервер для порта, и поллинг телеграм-бота одновременно
     await web_server()
-    print("Бот и веб-сервер успешно запущены...")
+    print("Премиум-бот успешно запущен...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
