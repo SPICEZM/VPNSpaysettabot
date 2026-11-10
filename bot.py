@@ -104,7 +104,6 @@ async def create_xray_client(telegram_id: int, user_name: str, hours: int = 0):
 
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
-    # Удаляем команду /start, чтобы не засорять чат
     try:
         await message.delete()
     except:
@@ -184,7 +183,7 @@ async def sub_2months(callback: CallbackQuery): await create_invoice_for_user(ca
 @dp.callback_query(F.data == "sub_3months")
 async def sub_3months(callback: CallbackQuery): await create_invoice_for_user(callback, 4.50, "3 месяца")
 
-# Исправленная проверка оплаты
+# Проверка оплаты
 @dp.callback_query(F.data.startswith("check_"))
 async def check_payment(callback: CallbackQuery):
     invoice_id = int(callback.data.split("_")[1])
