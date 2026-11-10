@@ -12,23 +12,25 @@ from datetime import datetime, timezone, timedelta
 from aiocryptopay import AioCryptoPay, Networks
 
 # ================= НАСТРОЙКИ =================
-TOKEN = os.getenv("BOT_TOKEN", "ТВОЙ_ТОКЕН_БОТА_ИЗ_BOTFATHER")
+TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 10000))
 ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))  # Твой Telegram ID
 
 # Доступы к панели 3X-UI
-PANEL_URL = "http://82.27.117.53:16843"      
-PANEL_USER = "твой_логин_от_панели"          
-PANEL_PASSWORD = "твой_пароль_от_панели"      
+PANEL_URL = os.getenv("PANEL_URL", "http://82.27.117.53:16843")      
+PANEL_USER = os.getenv("PANEL_USER", "твой_логин")          
+PANEL_PASSWORD = os.getenv("PANEL_PASSWORD", "твой_пароль")      
 INBOUND_ID = 1                              
 
 # Токен Crypto Pay (от @CryptoBot)
-CRYPTO_TOKEN = "673279:AA0ivNrdzr8wyr6gxIVN9tkKVnJ7zFfiADi"
+CRYPTO_TOKEN = os.getenv("CRYPTO_TOKEN", "673279:AA0ivNrdzr8wyr6gxIVN9tkKVnJ7zFfiADi")
 # =============================================
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-crypto = AioCryptoPay(token=CRYPTO_TOKEN, network=Networks.MAIN_NET)
+
+# Объявляем переменную для крипто-платежки (инициализируем в main)
+crypto = None
 
 def get_current_time():
     msk_timezone = timezone(timedelta(hours=3))
@@ -45,10 +47,10 @@ def get_main_menu():
 
 def get_tariffs_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⏳ 1 неделя — 80 ₽ (~0.85 USDT)", callback_data="sub_week")],
-        [InlineKeyboardButton(text="⚡️ 1 месяц — 120 ₽ (~1.30 USDT)", callback_data="sub_month")],
-        [InlineKeyboardButton(text="💎 2 месяца — 200 ₽ (~2.15 USDT)", callback_data="sub_2months")],
-        [InlineKeyboardButton(text="🔥 3 месяца — 400 ₽ (~4.30 USDT)", callback_data="sub_3months")],
+        [InlineKeyboardButton(text="⏳ 1 неделя — 80 ₽ (~0.90 USDT)", callback_data="sub_week")],
+        [InlineKeyboardButton(text="⚡️ 1 месяц — 120 ₽ (~1.40 USDT)", callback_data="sub_month")],
+        [InlineKeyboardButton(text="💎 2 месяца — 200 ₽ (~2.30 USDT)", callback_data="sub_2months")],
+        [InlineKeyboardButton(text="🔥 3 месяца — 400 ₽ (~4.50 USDT)", callback_data="sub_3months")],
         [InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="back_to_menu")]
     ])
 
@@ -57,7 +59,7 @@ def get_back_menu():
         [InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="back_to_menu")]
     ])
 
-# Функция создания клиента в 3X-UI
+# Функция создания клиента в 3X-UI через API
 async def create_xray_client(telegram_id: int, user_name: str, hours: int = 0):
     client_uuid = str(uuid.uuid4())
     email = f"tg_{telegram_id}_{int(datetime.now().timestamp())}"
@@ -87,7 +89,8 @@ async def create_xray_client(telegram_id: int, user_name: str, hours: int = 0):
         async with aiohttp.ClientSession() as session:
             login_url = f"{PANEL_URL}/login"
             async with session.post(login_url, json={"username": PANEL_USER, "password": PANEL_PASSWORD}) as resp:
-                if resp.status != 200: return None
+                if resp.status != 200: 
+                    return None
                 
             add_url = f"{PANEL_URL}/panel/api/inbound/addClient"
             async with session.post(add_url, json=client_data) as resp:
@@ -107,7 +110,7 @@ async def create_xray_client(telegram_id: int, user_name: str, hours: int = 0):
 async def cmd_start(message: Message):
     welcome_text = (
         f"<b>Привет, {message.from_user.first_name}! 👋</b>\n\n"
-        "Добро пожаловать в <b>SPAYSETTA VPN</b> — твой проводник в свободный и быстрый интернет."
+        "Добро пожаловать в <b>SPAYSETTA VPN</b> — твой проводник в свободный и быстрый интернет без границ."
     )
     await message.answer(welcome_text, reply_markup=get_main_menu(), parse_mode=ParseMode.HTML)
 
@@ -120,12 +123,17 @@ async def process_buy(callback: CallbackQuery):
 @dp.callback_query(F.data == "profile")
 async def process_profile(callback: CallbackQuery):
     user = callback.from_user
-    await callback.message.edit_text(f"👤 <b>Твой профиль:</b>\n\n🆔 ID: <code>{user.id}</code>", reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
+    await callback.message.edit_text(f"👤 <b>Твой профиль:</b>\n\n🆔 ID: <code>{user.id}</code>\n🔴 Подписка: Активной подписки нет", reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
     await callback.answer()
 
 @dp.callback_query(F.data == "instruction")
 async def process_instruction(callback: CallbackQuery):
-    text = "📖 <b>Инструкция:</b>\n\n1. Скачай Happ (iOS) или v2rayNG (Android).\n2. Скопируй ключ и добавь в приложение."
+    text = (
+        "📖 <b>Инструкция по подключению:</b>\n\n"
+        "1. Скачай приложение <b>Happ</b> (iOS) или <b>v2rayNG</b> (Android).\n"
+        "2. Скопируй свой VLESS-ключ после покупки или теста.\n"
+        "3. Добавь его в приложение и запусти подключение!"
+    )
     await callback.message.edit_text(text, reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
     await callback.answer()
 
@@ -135,15 +143,14 @@ async def process_free_test(callback: CallbackQuery):
     vless_key = await create_xray_client(callback.from_user.id, callback.from_user.first_name, hours=5)
     
     if vless_key:
-        text = f"🎁 <b>Тест активирован!</b>\n\n<code>{vless_key}</code>\n\n⚠️ <i>Срок действия: 5 часов.</i>"
+        text = f"🎁 <b>Тест успешно активирован!</b>\n\nСкопируй ключ ниже:\n\n<code>{vless_key}</code>\n\n⚠️ <i>Срок действия: 5 часов.</i>"
     else:
-        text = "❌ Ошибка создания ключа."
+        text = "❌ Ошибка создания ключа. Попробуй позже."
     await callback.message.edit_text(text, reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
 
-# Создание счета через Crypto Pay для каждого тарифа
+# Создание счета через Crypto Pay
 async def create_invoice_for_user(callback: CallbackQuery, amount_usd: float, title: str):
     try:
-        # Создаем инвойс в USDT
         invoice = await crypto.create_invoice(amount=amount_usd, fiat='USD', currency_type='fiat', description=f"Подписка Spaysetta VPN: {title}")
         
         pay_keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -155,7 +162,7 @@ async def create_invoice_for_user(callback: CallbackQuery, amount_usd: float, ti
         await callback.message.edit_text(
             f"💳 <b>Счет на оплату: {title}</b>\n\n"
             f"Сумма: <b>${amount_usd} USDT</b>\n\n"
-            "Нажми кнопку ниже для оплаты через Telegram Wallet. После оплаты нажми «Проверить оплату».",
+            "Нажми кнопку ниже для оплаты через Telegram Wallet. После оплаты обязательно нажми «Проверить оплату».",
             reply_markup=pay_keyboard,
             parse_mode=ParseMode.HTML
         )
@@ -175,32 +182,33 @@ async def sub_2months(callback: CallbackQuery): await create_invoice_for_user(ca
 @dp.callback_query(F.data == "sub_3months")
 async def sub_3months(callback: CallbackQuery): await create_invoice_for_user(callback, 4.50, "3 месяца")
 
-# Проверка оплаты пользователем
+# Проверка оплаты пользователем и автовыдача ключа
 @dp.callback_query(F.data.startswith("check_"))
 async def check_payment(callback: CallbackQuery):
     invoice_id = int(callback.data.split("_")[1])
     invoices = await crypto.get_invoices(invoice_ids=invoice_id)
     
     if invoices and invoices[0].status == "paid":
-        await callback.message.edit_text("✅ <b>Оплата получена! Создаем твой ключ...</b>", parse_mode=ParseMode.HTML)
+        await callback.message.edit_text("✅ <b>Оплата получена! Генерируем твой ключ...</b>", parse_mode=ParseMode.HTML)
         vless_key = await create_xray_client(callback.from_user.id, callback.from_user.first_name, hours=0)
         
         if vless_key:
             success_text = f"🎉 <b>Спасибо за покупку! Твоя подписка активирована:</b>\n\n<code>{vless_key}</code>"
         else:
-            success_text = "❌ Оплата прошла, но произошла ошибка при создании ключа. Админ уже уведомлен!"
-            await bot.send_message(ADMIN_ID, f"⚠️ Пользователь @{callback.from_user.username} оплатил счет, но ключ не создался!")
+            success_text = "❌ Оплата прошла, но произошла ошибка при создании ключа. Администратор уже уведомлен."
+            await bot.send_message(ADMIN_ID, f"⚠️ Пользователь @{callback.from_user.username} оплатил счет, но ключ в панели не создался!")
             
         await callback.message.answer(success_text, reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
     else:
-        await callback.answer("⏳ Платеж еще не поступил. Оплатите счет в Wallet и попробуйте снова.", show_alert=True)
+        await callback.answer("⏳ Платеж еще не поступил. Оплати счет в Wallet и попробуй снова.", show_alert=True)
 
 @dp.callback_query(F.data == "back_to_menu")
 async def process_back(callback: CallbackQuery):
     await callback.message.edit_text(f"<b>Привет, {callback.from_user.first_name}! 👋</b>", reply_markup=get_main_menu(), parse_mode=ParseMode.HTML)
     await callback.answer()
 
-async def handle_ping(request): return web.Response(text="Bot is running!")
+async def handle_ping(request): 
+    return web.Response(text="Bot is running!")
 
 async def web_server():
     app = web.Application()
@@ -211,9 +219,13 @@ async def web_server():
     await site.start()
 
 async def main():
+    global crypto
+    # Инициализируем Crypto Pay внутри запущенного event loop
+    crypto = AioCryptoPay(token=CRYPTO_TOKEN, network=Networks.MAIN_NET)
+    
     logging.basicConfig(level=logging.INFO)
     await web_server()
-    print("Бот с Crypto Pay запущен!")
+    print("Бот Spaysetta с Crypto Pay и 3X-UI успешно запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
