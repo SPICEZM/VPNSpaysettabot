@@ -14,22 +14,18 @@ from aiocryptopay import AioCryptoPay, Networks
 # ================= НАСТРОЙКИ =================
 TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 10000))
-ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))  # Твой Telegram ID
+ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
 
-# Доступы к панели 3X-UI
 PANEL_URL = os.getenv("PANEL_URL", "http://82.27.117.53:16843")      
-PANEL_USER = os.getenv("PANEL_USER", "твой_логин")          
-PANEL_PASSWORD = os.getenv("PANEL_PASSWORD", "твой_пароль")      
+PANEL_USER = os.getenv("PANEL_USER", "Spaysetta")          
+PANEL_PASSWORD = os.getenv("PANEL_PASSWORD", "Gggmoon9")      
 INBOUND_ID = 1                              
 
-# Токен Crypto Pay (от @CryptoBot)
 CRYPTO_TOKEN = os.getenv("CRYPTO_TOKEN", "673279:AA0ivNrdzr8wyr6gxIVN9tkKVnJ7zFfiADi")
 # =============================================
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-
-# Объявляем переменную для крипто-платежки (инициализируем в main)
 crypto = None
 
 def get_current_time():
@@ -108,6 +104,12 @@ async def create_xray_client(telegram_id: int, user_name: str, hours: int = 0):
 
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
+    # Удаляем команду /start, чтобы не засорять чат
+    try:
+        await message.delete()
+    except:
+        pass
+        
     welcome_text = (
         f"<b>Привет, {message.from_user.first_name}! 👋</b>\n\n"
         "Добро пожаловать в <b>SPAYSETTA VPN</b> — твой проводник в свободный и быстрый интернет без границ."
@@ -151,7 +153,7 @@ async def process_free_test(callback: CallbackQuery):
 # Создание счета через Crypto Pay
 async def create_invoice_for_user(callback: CallbackQuery, amount_usd: float, title: str):
     try:
-        invoice = await crypto.create_invoice(amount=amount_usd, fiat='USD', currency_type='fiat', description=f"Подписка Spaysetta VPN: {title}")
+        invoice = await crypto.create_invoice(amount=amount_usd, fiat='USD', currency_type='fiat', description=f"Spaysetta VPN: {title}")
         
         pay_keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💳 Оплатить в Wallet", url=invoice.bot_invoice_url)],
@@ -182,29 +184,36 @@ async def sub_2months(callback: CallbackQuery): await create_invoice_for_user(ca
 @dp.callback_query(F.data == "sub_3months")
 async def sub_3months(callback: CallbackQuery): await create_invoice_for_user(callback, 4.50, "3 месяца")
 
-# Проверка оплаты пользователем и автовыдача ключа
+# Исправленная проверка оплаты
 @dp.callback_query(F.data.startswith("check_"))
 async def check_payment(callback: CallbackQuery):
     invoice_id = int(callback.data.split("_")[1])
-    invoices = await crypto.get_invoices(invoice_ids=invoice_id)
-    
-    if invoices and invoices[0].status == "paid":
-        await callback.message.edit_text("✅ <b>Оплата получена! Генерируем твой ключ...</b>", parse_mode=ParseMode.HTML)
-        vless_key = await create_xray_client(callback.from_user.id, callback.from_user.first_name, hours=0)
+    try:
+        invoices = await crypto.get_invoices(invoice_ids=[invoice_id])
         
-        if vless_key:
-            success_text = f"🎉 <b>Спасибо за покупку! Твоя подписка активирована:</b>\n\n<code>{vless_key}</code>"
-        else:
-            success_text = "❌ Оплата прошла, но произошла ошибка при создании ключа. Администратор уже уведомлен."
-            await bot.send_message(ADMIN_ID, f"⚠️ Пользователь @{callback.from_user.username} оплатил счет, но ключ в панели не создался!")
+        if invoices and invoices[0].status == "paid":
+            await callback.message.edit_text("✅ <b>Оплата получена! Генерируем твой ключ...</b>", parse_mode=ParseMode.HTML)
+            vless_key = await create_xray_client(callback.from_user.id, callback.from_user.first_name, hours=0)
             
-        await callback.message.answer(success_text, reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
-    else:
-        await callback.answer("⏳ Платеж еще не поступил. Оплати счет в Wallet и попробуй снова.", show_alert=True)
+            if vless_key:
+                success_text = f"🎉 <b>Спасибо за покупку! Твоя подписка активирована:</b>\n\n<code>{vless_key}</code>"
+            else:
+                success_text = "❌ Оплата прошла, но произошла ошибка при создании ключа. Администратор уже уведомлен."
+                await bot.send_message(ADMIN_ID, f"⚠️ Пользователь @{callback.from_user.username} оплатил счет, но ключ в панели не создался!")
+                
+            await callback.message.answer(success_text, reply_markup=get_back_menu(), parse_mode=ParseMode.HTML)
+        else:
+            await callback.answer("⏳ Платеж еще не поступил. Оплати счет в Wallet и попробуй снова.", show_alert=True)
+    except Exception as e:
+        await callback.answer(f"⚠️ Ошибка проверки: {e}", show_alert=True)
 
 @dp.callback_query(F.data == "back_to_menu")
 async def process_back(callback: CallbackQuery):
-    await callback.message.edit_text(f"<b>Привет, {callback.from_user.first_name}! 👋</b>", reply_markup=get_main_menu(), parse_mode=ParseMode.HTML)
+    welcome_text = (
+        f"<b>Привет, {callback.from_user.first_name}! 👋</b>\n\n"
+        "Добро пожаловать в <b>SPAYSETTA VPN</b> — твой проводник в свободный и быстрый интернет без границ."
+    )
+    await callback.message.edit_text(welcome_text, reply_markup=get_main_menu(), parse_mode=ParseMode.HTML)
     await callback.answer()
 
 async def handle_ping(request): 
@@ -220,12 +229,11 @@ async def web_server():
 
 async def main():
     global crypto
-    # Инициализируем Crypto Pay внутри запущенного event loop
     crypto = AioCryptoPay(token=CRYPTO_TOKEN, network=Networks.MAIN_NET)
     
     logging.basicConfig(level=logging.INFO)
     await web_server()
-    print("Бот Spaysetta с Crypto Pay и 3X-UI успешно запущен!")
+    print("Бот Spaysetta успешно запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
